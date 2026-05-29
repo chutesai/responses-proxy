@@ -21,7 +21,11 @@ pub async fn refresh_models_cache(app: &App) -> Result<(), Box<dyn std::error::E
     log::info!("🔄 Fetching available models from {}", models_url);
 
     // Models endpoint is public (no auth required)
-    let res = app.client.get(&models_url).send().await?;
+    let mut req = app.client.get(&models_url);
+    if let Some(host) = &app.backend_host_header {
+        req = req.header("host", host);
+    }
+    let res = req.send().await?;
     let status = res.status();
     if !status.is_success() {
         // Read error body for debugging

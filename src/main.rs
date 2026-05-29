@@ -23,6 +23,7 @@ async fn main() {
 
     let backend_url = env::var("BACKEND_URL")
         .unwrap_or_else(|_| "https://llm.chutes.ai/v1/chat/completions".into());
+    let backend_host_header = env::var("BACKEND_HOST_HEADER").ok();
     let backend_timeout_secs = env::var("BACKEND_TIMEOUT_SECS")
         .ok()
         .and_then(|s| s.parse::<u64>().ok())
@@ -64,6 +65,7 @@ async fn main() {
             .build()
             .unwrap(),
         backend_url: backend_url.clone(),
+        backend_host_header: backend_host_header.clone(),
         models_cache: models_cache.clone(),
         circuit_breaker: circuit_breaker.clone(),
     };

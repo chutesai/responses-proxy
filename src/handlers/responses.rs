@@ -548,9 +548,23 @@ pub async fn create_response(
         .post(&app.backend_url)
         .header("content-type", "application/json");
 
-    // Forward client auth to backend
-    if let Some(key) = &client_key {
-        backend_req = backend_req.bearer_auth(key);
+    // Forward client headers, skipping hop-by-hop and headers we set ourselves
+    for (name, value) in headers.iter() {
+        match name.as_str() {
+            "host" | "connection" | "keep-alive" | "transfer-encoding" | "upgrade"
+            | "proxy-authenticate" | "proxy-authorization" | "te" | "trailers"
+            | "content-type" | "content-length" => {}
+            _ => {
+                backend_req = backend_req.header(name, value);
+            }
+        }
+    }
+
+    if let Some(host) = &app.backend_host_header {
+        backend_req = backend_req.header("host", host);
+    }
+
+    if client_key.is_some() {
         log::info!("🔄 Auth: Forwarding client key to backend");
     }
 
