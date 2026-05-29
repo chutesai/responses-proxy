@@ -335,7 +335,7 @@ Do not use JSON tool calls. Use the XML format above.";
         user: req.user.clone(),
         logprobs,
         top_logprobs,
-        stream: req.stream.unwrap_or(false),
+        stream: true, // Always stream — the Responses API always returns SSE
         stop: req.stop.clone(),
         frequency_penalty: req.frequency_penalty,
         presence_penalty: req.presence_penalty,
@@ -345,10 +345,11 @@ Do not use JSON tool calls. Use the XML format above.";
         service_tier: req.service_tier.clone(),
         store: req.store,
         n: req.n,
-        stream_options: req
+        stream_options: Some(req
             .stream_options
             .as_ref()
-            .map(|so| serde_json::to_value(so).unwrap_or(json!({}))),
+            .map(|so| serde_json::to_value(so).unwrap_or(json!({})))
+            .unwrap_or(json!({"include_usage": true}))),
         max_completion_tokens: req.max_completion_tokens,
         modalities: req.modalities.clone(),
         prediction: req.prediction.clone(),
