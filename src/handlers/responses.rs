@@ -1825,6 +1825,9 @@ fn estimate_input_size(input: &crate::models::ResponseInput) -> usize {
                                     text.len()
                                         + encrypted_content.as_ref().map(|e| e.len()).unwrap_or(0)
                                 }
+                                ContentPart::EncryptedContent { encrypted_content } => {
+                                    encrypted_content.len()
+                                }
                             })
                             .sum(),
                     };
@@ -1852,13 +1855,54 @@ fn estimate_input_size(input: &crate::models::ResponseInput) -> usize {
                         + encrypted_content.as_ref().map(|e| e.len()).unwrap_or(0)
                 }
                 ResponseInputItem::ItemReference { id } => id.len(),
+                ResponseInputItem::AgentMessage {
+                    author,
+                    recipient,
+                    content,
+                } => {
+                    let content_size = match content {
+                        ResponseContent::String(s) => s.len(),
+                        ResponseContent::Array(parts) => parts
+                            .iter()
+                            .map(|p| match p {
+                                ContentPart::InputText { text }
+                                | ContentPart::OutputText { text } => text.len(),
+                                ContentPart::EncryptedContent { encrypted_content } => {
+                                    encrypted_content.len()
+                                }
+                                _ => 0,
+                            })
+                            .sum(),
+                    };
+                    author.as_ref().map(|a| a.len()).unwrap_or(0)
+                        + recipient.as_ref().map(|r| r.len()).unwrap_or(0)
+                        + content_size
+                }
                 ResponseInputItem::FunctionCall {
                     call_id,
+                    id,
                     name,
                     arguments,
-                } => call_id.len() + name.len() + arguments.len(),
-                ResponseInputItem::FunctionCallOutput { call_id, output } => {
-                    call_id.len() + output.len()
+                } => {
+                    call_id.as_ref().map(|c| c.len()).unwrap_or(0)
+                        + id.as_ref().map(|i| i.len()).unwrap_or(0)
+                        + name.len()
+                        + arguments.as_ref().map(|a| a.len()).unwrap_or(0)
+                }
+                ResponseInputItem::FunctionCallOutput {
+                    call_id,
+                    id,
+                    output,
+                    name,
+                } => {
+                    call_id.as_ref().map(|c| c.len()).unwrap_or(0)
+                        + id.as_ref().map(|i| i.len()).unwrap_or(0)
+                        + name.as_ref().map(|n| n.len()).unwrap_or(0)
+                        + match output {
+                            Value::String(s) => s.len(),
+                            Value::Null => 0,
+                            other => other.to_string().len(),
+                        }
                 }
             })
             .sum(),

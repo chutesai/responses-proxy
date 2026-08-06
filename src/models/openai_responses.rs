@@ -36,12 +36,47 @@ pub enum ResponseInputItem {
     ItemReference { id: String },
     #[serde(rename = "function_call")]
     FunctionCall {
-        call_id: String,
+        /// Responses API items carry both an item `id` (`fc_...`) and a `call_id`.
+        /// Only `call_id` is meaningful for pairing with the output, but accept
+        /// clients that only send `id`.
+        #[serde(default)]
+        call_id: Option<String>,
+        #[serde(default)]
+        id: Option<String>,
         name: String,
-        arguments: String,
+        #[serde(default)]
+        arguments: Option<String>,
+    },
+    /// An inter-agent message, as Codex's multi-agent runtime records it in a
+    /// session's history.
+    ///
+    /// Codex writes one of these both ways: into a freshly spawned sub-agent's
+    /// history (its task) and back into the parent's history (the child's final
+    /// answer). Without this variant the tagged enum fails to deserialize and
+    /// the whole request is rejected as `invalid_request_format` — which makes
+    /// *every* sub-agent request fail, since a sub-agent's history begins with
+    /// exactly this item.
+    #[serde(rename = "agent_message")]
+    AgentMessage {
+        #[serde(default)]
+        author: Option<String>,
+        #[serde(default)]
+        recipient: Option<String>,
+        content: ResponseContent,
     },
     #[serde(rename = "function_call_output")]
-    FunctionCallOutput { call_id: String, output: String },
+    FunctionCallOutput {
+        #[serde(default)]
+        call_id: Option<String>,
+        #[serde(default)]
+        id: Option<String>,
+        /// Usually a string, but tolerate clients that send structured JSON.
+        #[serde(default)]
+        output: Value,
+        /// Some clients echo the function name back on the output item.
+        #[serde(default, alias = "tool")]
+        name: Option<String>,
+    },
 }
 
 #[derive(Deserialize, Debug)]
@@ -77,6 +112,14 @@ pub enum ContentPart {
         #[serde(default)]
         encrypted_content: Option<String>,
     },
+    /// The body of an inter-agent message.
+    ///
+    /// Named "encrypted" because on OpenAI's own backend it is opaque to the
+    /// client; against a plain OpenAI-compatible upstream it is the literal
+    /// text, and dropping it would send a sub-agent its task with the task
+    /// removed. Treated as text for exactly that reason.
+    #[serde(rename = "encrypted_content")]
+    EncryptedContent { encrypted_content: String },
     #[serde(rename = "output")]
     ToolOutput {
         #[allow(dead_code)]
