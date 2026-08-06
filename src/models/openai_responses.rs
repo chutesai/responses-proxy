@@ -36,12 +36,30 @@ pub enum ResponseInputItem {
     ItemReference { id: String },
     #[serde(rename = "function_call")]
     FunctionCall {
-        call_id: String,
+        /// Responses API items carry both an item `id` (`fc_...`) and a `call_id`.
+        /// Only `call_id` is meaningful for pairing with the output, but accept
+        /// clients that only send `id`.
+        #[serde(default)]
+        call_id: Option<String>,
+        #[serde(default)]
+        id: Option<String>,
         name: String,
-        arguments: String,
+        #[serde(default)]
+        arguments: Option<String>,
     },
     #[serde(rename = "function_call_output")]
-    FunctionCallOutput { call_id: String, output: String },
+    FunctionCallOutput {
+        #[serde(default)]
+        call_id: Option<String>,
+        #[serde(default)]
+        id: Option<String>,
+        /// Usually a string, but tolerate clients that send structured JSON.
+        #[serde(default)]
+        output: Value,
+        /// Some clients echo the function name back on the output item.
+        #[serde(default, alias = "tool")]
+        name: Option<String>,
+    },
 }
 
 #[derive(Deserialize, Debug)]

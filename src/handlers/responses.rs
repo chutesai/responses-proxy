@@ -1854,11 +1854,29 @@ fn estimate_input_size(input: &crate::models::ResponseInput) -> usize {
                 ResponseInputItem::ItemReference { id } => id.len(),
                 ResponseInputItem::FunctionCall {
                     call_id,
+                    id,
                     name,
                     arguments,
-                } => call_id.len() + name.len() + arguments.len(),
-                ResponseInputItem::FunctionCallOutput { call_id, output } => {
-                    call_id.len() + output.len()
+                } => {
+                    call_id.as_ref().map(|c| c.len()).unwrap_or(0)
+                        + id.as_ref().map(|i| i.len()).unwrap_or(0)
+                        + name.len()
+                        + arguments.as_ref().map(|a| a.len()).unwrap_or(0)
+                }
+                ResponseInputItem::FunctionCallOutput {
+                    call_id,
+                    id,
+                    output,
+                    name,
+                } => {
+                    call_id.as_ref().map(|c| c.len()).unwrap_or(0)
+                        + id.as_ref().map(|i| i.len()).unwrap_or(0)
+                        + name.as_ref().map(|n| n.len()).unwrap_or(0)
+                        + match output {
+                            Value::String(s) => s.len(),
+                            Value::Null => 0,
+                            other => other.to_string().len(),
+                        }
                 }
             })
             .sum(),

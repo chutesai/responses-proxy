@@ -8,6 +8,8 @@ pub struct ChatMessage {
     pub role: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<Value>, // String or Array for multimodal
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>, // Function name for tool role messages (required by some templates)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
