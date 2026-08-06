@@ -1825,6 +1825,9 @@ fn estimate_input_size(input: &crate::models::ResponseInput) -> usize {
                                     text.len()
                                         + encrypted_content.as_ref().map(|e| e.len()).unwrap_or(0)
                                 }
+                                ContentPart::EncryptedContent { encrypted_content } => {
+                                    encrypted_content.len()
+                                }
                             })
                             .sum(),
                     };
@@ -1852,6 +1855,29 @@ fn estimate_input_size(input: &crate::models::ResponseInput) -> usize {
                         + encrypted_content.as_ref().map(|e| e.len()).unwrap_or(0)
                 }
                 ResponseInputItem::ItemReference { id } => id.len(),
+                ResponseInputItem::AgentMessage {
+                    author,
+                    recipient,
+                    content,
+                } => {
+                    let content_size = match content {
+                        ResponseContent::String(s) => s.len(),
+                        ResponseContent::Array(parts) => parts
+                            .iter()
+                            .map(|p| match p {
+                                ContentPart::InputText { text }
+                                | ContentPart::OutputText { text } => text.len(),
+                                ContentPart::EncryptedContent { encrypted_content } => {
+                                    encrypted_content.len()
+                                }
+                                _ => 0,
+                            })
+                            .sum(),
+                    };
+                    author.as_ref().map(|a| a.len()).unwrap_or(0)
+                        + recipient.as_ref().map(|r| r.len()).unwrap_or(0)
+                        + content_size
+                }
                 ResponseInputItem::FunctionCall {
                     call_id,
                     id,

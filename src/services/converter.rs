@@ -205,6 +205,42 @@ Do not use JSON tool calls. Use the XML format above.";
                                 });
                             }
                         }
+                        // An inter-agent message. Chat Completions has no such
+                        // role, so it becomes a `user` message: it is always
+                        // information arriving from *another* agent — a task
+                        // handed down, or a child's answer handed back — never
+                        // something this model said.
+                        ResponseInputItem::AgentMessage {
+                            author,
+                            recipient,
+                            content,
+                        } => {
+                            // Like any non-assistant message, it closes the
+                            // assistant turn that preceded it.
+                            flush_pending_tool_calls(
+                                &mut messages,
+                                &mut pending_tool_calls,
+                                &mut accumulated_reasoning,
+                            );
+
+                            let (msg_content, content_reasoning) =
+                                convert_response_content(content)?;
+                            if let Some(content_think) = content_reasoning {
+                                accumulated_reasoning.push(content_think);
+                            }
+                            log::info!(
+                                "🤝 INPUT: agent_message {} -> {}",
+                                author.as_deref().unwrap_or("?"),
+                                recipient.as_deref().unwrap_or("?")
+                            );
+                            messages.push(ChatMessage {
+                                role: "user".to_string(),
+                                content: Some(msg_content),
+                                name: None,
+                                tool_calls: None,
+                                tool_call_id: None,
+                            });
+                        }
                         ResponseInputItem::FunctionCall {
                             call_id,
                             id,
@@ -612,6 +648,12 @@ fn convert_response_content(content: &ResponseContent) -> Result<(Value, Option<
                             "text": body
                         }));
                     }
+                    ContentPart::EncryptedContent { encrypted_content } => {
+                        converted.push(json!({
+                            "type": "text",
+                            "text": encrypted_content
+                        }));
+                    }
                     ContentPart::InputImage { image_url } => {
                         converted.push(json!({
                             "type": "image_url",
@@ -651,6 +693,9 @@ fn convert_response_content(content: &ResponseContent) -> Result<(Value, Option<
                             Some(text.as_str())
                         }
                         ContentPart::ToolOutput { body, .. } => Some(body.as_str()),
+                        ContentPart::EncryptedContent { encrypted_content } => {
+                            Some(encrypted_content.as_str())
+                        }
                         _ => None,
                     })
                     .collect::<Vec<_>>()
@@ -1043,5 +1088,85 @@ mod tests {
             messages[1]["tool_calls"].as_array().unwrap()[0]["function"]["arguments"],
             "{}"
         );
+    }
+
+    // ------------------------------------------------- inter-agent messages
+
+    /// The exact first request a spawned sub-agent makes, copied from a real
+    /// chutescoder rollout. Before `ResponseInputItem::AgentMessage` existed
+    /// this failed to deserialize and the proxy answered `422
+    /// invalid_request_format`, so *every* sub-agent died on its first turn.
+    #[test]
+    fn a_sub_agents_task_message_converts_instead_of_being_rejected() {
+        let messages = messages_for(json!({
+            "model": "moonshotai/Kimi-K3-TEE",
+            "input": [{
+                "type": "agent_message",
+                "id": "amsg_019fd6f4-077c-7a50-b796-663fa222ffe7",
+                "author": "/root",
+                "recipient": "/root/counter",
+                "content": [
+                    {"type": "input_text",
+                     "text": "Message Type: NEW_TASK\nTask name: /root/counter\nSender: /root\nPayload:\n"},
+                    {"type": "encrypted_content",
+                     "encrypted_content": "Count the .py files. Reply with ONLY the number."}
+                ]
+            }],
+            "tools": python_tools()
+        }));
+
+        assert_eq!(messages.len(), 1, "{messages:#?}");
+        assert_eq!(messages[0]["role"], "user");
+        let text = messages[0]["content"].as_str().expect("flattened to text");
+        // Both halves must survive: the header says who is asking, and the
+        // body *is* the task. Dropping the body would hand the sub-agent an
+        // empty assignment, which is worse than an error.
+        assert!(text.contains("Sender: /root"), "{text}");
+        assert!(text.contains("Count the .py files"), "{text}");
+    }
+
+    /// The mirror image: the child's answer, injected back into the parent's
+    /// history by the completion watcher.
+    #[test]
+    fn a_childs_final_answer_converts_in_the_parents_history() {
+        let messages = messages_for(json!({
+            "model": "moonshotai/Kimi-K3-TEE",
+            "input": [
+                {"type": "message", "role": "user", "content": "delegate the count"},
+                {"type": "agent_message", "author": "/root/counter", "recipient": "/root",
+                 "content": [{"type": "input_text",
+                              "text": "Message Type: FINAL_ANSWER\nSender: /root/counter\nPayload:\n5"}]}
+            ],
+            "tools": python_tools()
+        }));
+
+        assert_eq!(messages.len(), 2, "{messages:#?}");
+        assert_eq!(messages[1]["role"], "user");
+        assert!(
+            messages[1]["content"].as_str().unwrap().contains("5"),
+            "{messages:#?}"
+        );
+    }
+
+    /// An agent message closes the assistant turn before it, exactly like any
+    /// other non-assistant message — otherwise the pending `tool_calls` would
+    /// be emitted *after* it and Kimi would reject the ordering.
+    #[test]
+    fn an_agent_message_flushes_pending_tool_calls_first() {
+        let messages = messages_for(json!({
+            "model": "moonshotai/Kimi-K3-TEE",
+            "input": [
+                {"type": "message", "role": "user", "content": "go"},
+                {"type": "function_call", "call_id": "c1", "name": "python",
+                 "arguments": "{\"code\":\"1\"}"},
+                {"type": "function_call_output", "call_id": "c1", "output": "1"},
+                {"type": "agent_message", "author": "/root/kid", "recipient": "/root",
+                 "content": [{"type": "input_text", "text": "done"}]}
+            ],
+            "tools": python_tools()
+        }));
+
+        let roles: Vec<_> = messages.iter().map(|m| m["role"].as_str().unwrap()).collect();
+        assert_eq!(roles, vec!["user", "assistant", "tool", "user"], "{messages:#?}");
     }
 }
